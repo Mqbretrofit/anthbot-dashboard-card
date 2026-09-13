@@ -1,0 +1,12 @@
+{
+  "name": "anthbot-dashboard-card",
+  "version": "0.1.0-dev.1",
+  "private": true,
+  "description": "Hero-style Home Assistant dashboard card for ANTHBOT Map",
+  "scripts": {
+    "check": "node --check anthbot-dashboard-card.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
