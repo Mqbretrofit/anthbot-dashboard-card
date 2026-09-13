@@ -1,0 +1,25 @@
+name: Validate dashboard card
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check
+        run: npm run check
+      - name: Verify required HACS files
+        run: |
+          test -f hacs.json
+          test -f anthbot-dashboard-card.js
+          node -e "const h=require('./hacs.json'); if(h.filename !== 'anthbot-dashboard-card.js') process.exit(1)"
