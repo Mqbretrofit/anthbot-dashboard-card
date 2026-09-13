@@ -21,8 +21,26 @@ The current test build provides:
 - Home Assistant service calls through the existing `anthbot_map` integration
 - `serial_number` included in commands whenever the map entity provides it
 - mobile-responsive layout
+- Home Assistant **visual card editor** with live preview
 
 The target selector uses the existing ANTHBOT Map service layer. It does not reimplement mower protocol commands. Manual zones are sent through `start_zone_mow`, auto zones through `start_auto_zone_mow`, outer-edge mowing through `start_outer_edge_mow`, and dock-area mowing through `start_dock_edge_mow`.
+
+## Visual editor
+
+After the card resource is loaded, choose **Edit dashboard → Add card → ANTHBOT Dashboard Card**. The card now exposes a native Lovelace visual editor; YAML is no longer required for the normal setup.
+
+The visual editor currently includes:
+
+- ANTHBOT Map entity picker
+- dashboard title and height
+- background/aerial image
+- map fit and desktop/mobile rotation
+- show/hide live status chips
+- individual Battery / Status / RTK / Progress / Height / Area / Time chip selection
+- show/hide mowing target selector
+- boundary, zone, no-go-zone and no-go-label overlays
+
+Every editor change emits Home Assistant's standard `config-changed` event, so the card preview updates while editing.
 
 ## Requirements
 
@@ -37,9 +55,11 @@ This repository is prepared as a HACS frontend/dashboard custom repository.
 1. Add `https://github.com/Mqbretrofit/anthbot-dashboard-card` as a custom HACS Dashboard/Lovelace repository.
 2. Install **ANTHBOT Dashboard Card**.
 3. Reload Home Assistant frontend resources / refresh the browser if HACS asks for it.
-4. Add a Manual card with the configuration below.
+4. Add **ANTHBOT Dashboard Card** from the normal visual card picker and select the mower's ANTHBOT Map entity.
 
-## Minimal configuration
+## Minimal YAML configuration
+
+YAML remains supported when wanted:
 
 ```yaml
 type: custom:anthbot-dashboard-card
@@ -49,7 +69,7 @@ name: ANTHBOT
 
 The `entity` must be the ANTHBOT Map entity for the mower, normally ending in `_map`.
 
-## Optional configuration
+## Optional YAML configuration
 
 ```yaml
 type: custom:anthbot-dashboard-card
@@ -84,8 +104,7 @@ Target availability comes from the current mower map data. Manual/auto zone butt
 
 ## Planned next steps
 
-- configurable status chips and action order
-- Home Assistant visual card editor
+- configurable action order and richer editor controls
 - per-mower command lock and stronger command-confirmation UI
 - smart Home Assistant update scoping
 - additional compact/wide dashboard layouts
