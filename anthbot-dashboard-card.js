@@ -1,5 +1,6 @@
-const CARD_VERSION = "0.2.0-dev.1";
+const CARD_VERSION = "0.3.0-dev.1";
 const CARD_TAG = "anthbot-dashboard-card";
+const EDITOR_TAG = "anthbot-dashboard-card-editor";
 const MAP_TAG = "anthbot-map-card";
 
 const ENTITY_MAP = {
@@ -53,6 +54,147 @@ const asZoneList = (value) => Array.isArray(value)
   ? value.filter((item) => item && typeof item === "object")
   : [];
 
+class AnthbotDashboardCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._hass = null;
+    this._config = {};
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._syncEntityPicker();
+  }
+
+  setConfig(config) {
+    this._config = { ...config };
+    this._render();
+  }
+
+  _render() {
+    if (!this.shadowRoot) return;
+    const config = this._config || {};
+    const chips = Array.isArray(config.chips) && config.chips.length
+      ? new Set(config.chips)
+      : new Set(CHIP_DEFS.map(([key]) => key));
+    const bool = (key, fallback = true) => config[key] === undefined ? fallback : config[key] !== false;
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host{display:block;color:var(--primary-text-color);font-family:var(--paper-font-body1_-_font-family,inherit)}
+        .editor{display:grid;gap:16px}.section{display:grid;gap:12px;padding:14px;border:1px solid var(--divider-color,rgba(127,127,127,.25));border-radius:14px;background:var(--card-background-color,var(--ha-card-background,#fff))}.title{font-size:15px;font-weight:700}.hint{font-size:12px;line-height:1.4;color:var(--secondary-text-color)}
+        label.field{display:grid;gap:6px;font-size:13px;font-weight:600}.field input,.field select{width:100%;min-height:42px;padding:8px 10px;border:1px solid var(--divider-color,rgba(127,127,127,.35));border-radius:8px;background:var(--card-background-color,var(--ha-card-background,#fff));color:var(--primary-text-color);font:inherit}.field input:focus,.field select:focus{outline:2px solid var(--primary-color);outline-offset:1px}
+        ha-entity-picker{display:block;width:100%}.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:38px}.toggle-copy{display:grid;gap:2px}.toggle strong{font-size:13px}.switch{position:relative;width:42px;height:24px;flex:0 0 auto}.switch input{position:absolute;opacity:0;pointer-events:none}.slider{position:absolute;inset:0;border-radius:999px;background:var(--disabled-text-color,#9e9e9e);cursor:pointer;transition:.18s}.slider:after{content:"";position:absolute;width:18px;height:18px;left:3px;top:3px;border-radius:50%;background:white;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:.18s}.switch input:checked+.slider{background:var(--primary-color)}.switch input:checked+.slider:after{transform:translateX(18px)}
+        .chips-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.chip-option{display:flex;align-items:center;gap:8px;min-height:38px;padding:8px 10px;border:1px solid var(--divider-color,rgba(127,127,127,.25));border-radius:10px;font-size:13px;cursor:pointer}.chip-option input{accent-color:var(--primary-color)}
+        .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:600px){.row,.chips-grid{grid-template-columns:1fr}}
+      </style>
+      <div class="editor">
+        <div class="section">
+          <div><div class="title">ANTHBOT mower</div><div class="hint">Select the ANTHBOT Map entity that belongs to this mower. Serial-scoped helpers and commands are resolved from this entity.</div></div>
+          <label class="field"><span>Map entity</span><ha-entity-picker data-key="entity" allow-custom-entity></ha-entity-picker></label>
+          <label class="field"><span>Dashboard title</span><input data-key="name" type="text" value="${this._escape(config.name ?? "ANTHBOT")}" placeholder="ANTHBOT"></label>
+        </div>
+
+        <div class="section">
+          <div><div class="title">Hero appearance</div><div class="hint">Basic presentation settings for the dashboard and embedded ANTHBOT map.</div></div>
+          <div class="row">
+            <label class="field"><span>Dashboard height</span><input data-key="height" data-number="true" type="number" min="460" step="10" value="${this._escape(config.height ?? 650)}"></label>
+            <label class="field"><span>Map fit</span><select data-key="fit"><option value="contain" ${config.fit === "contain" ? "selected" : ""}>Contain</option><option value="cover" ${config.fit !== "contain" ? "selected" : ""}>Cover</option></select></label>
+          </div>
+          <label class="field"><span>Background / aerial image</span><input data-key="image" type="text" value="${this._escape(config.image ?? "")}" placeholder="/local/garden.jpg"></label>
+          <div class="row">
+            <label class="field"><span>Map rotation</span><input data-key="rotation" data-number="true" type="number" step="1" value="${this._escape(config.rotation ?? 0)}"></label>
+            <label class="field"><span>Mobile map rotation</span><input data-key="mobile_map_rotation" data-number="true" type="number" step="1" value="${this._escape(config.mobile_map_rotation ?? "")}"></label>
+          </div>
+        </div>
+
+        <div class="section">
+          <div><div class="title">Live information</div><div class="hint">Choose which live status chips are shown over the map.</div></div>
+          ${this._toggleHtml("show_chips", "Show status chips", "Battery, status, RTK, progress and other live values.", bool("show_chips", true))}
+          <div class="chips-grid" data-role="chip-options">
+            ${CHIP_DEFS.map(([key, icon, label]) => `<label class="chip-option"><input type="checkbox" data-chip="${key}" ${chips.has(key) ? "checked" : ""}><span>${icon}</span><span>${label}</span></label>`).join("")}
+          </div>
+        </div>
+
+        <div class="section">
+          <div><div class="title">Mowing controls</div><div class="hint">The dashboard sends commands through the existing ANTHBOT Map services; model-specific routing stays in the integration.</div></div>
+          ${this._toggleHtml("show_targets", "Show mowing target selector", "Full lawn, manual zones, auto zones, outer edge and dock area when available.", bool("show_targets", true))}
+        </div>
+
+        <div class="section">
+          <div><div class="title">Map layers</div><div class="hint">Control the layers provided by the embedded ANTHBOT Map renderer.</div></div>
+          ${this._toggleHtml("show_decoded_boundary", "Boundary", "Show the decoded lawn boundary.", bool("show_decoded_boundary", true))}
+          ${this._toggleHtml("show_zones", "Zones", "Show mowing zones on the map.", bool("show_zones", true))}
+          ${this._toggleHtml("show_no_go_zones", "No-go zones", "Show configured no-go areas.", bool("show_no_go_zones", true))}
+          ${this._toggleHtml("show_no_go_labels", "No-go labels", "Show no-go zone labels.", bool("show_no_go_labels", true))}
+        </div>
+      </div>`;
+
+    this._syncEntityPicker();
+    this.shadowRoot.querySelectorAll("input[data-key], select[data-key]").forEach((element) => {
+      element.addEventListener("change", () => this._fieldChanged(element));
+    });
+    this.shadowRoot.querySelectorAll("input[data-chip]").forEach((element) => {
+      element.addEventListener("change", () => this._chipsChanged());
+    });
+  }
+
+  _toggleHtml(key, title, hint, checked) {
+    return `<div class="toggle"><div class="toggle-copy"><strong>${title}</strong><span class="hint">${hint}</span></div><label class="switch"><input type="checkbox" data-key="${key}" data-boolean="true" ${checked ? "checked" : ""}><span class="slider"></span></label></div>`;
+  }
+
+  _syncEntityPicker() {
+    const picker = this.shadowRoot?.querySelector('ha-entity-picker[data-key="entity"]');
+    if (!picker) return;
+    picker.hass = this._hass;
+    picker.value = this._config?.entity || "";
+    picker.includeDomains = ["sensor"];
+    if (!picker.__anthbotBound) {
+      picker.__anthbotBound = true;
+      picker.addEventListener("value-changed", (event) => {
+        const value = event?.detail?.value;
+        if (value !== undefined) this._setConfigValue("entity", value);
+      });
+    }
+  }
+
+  _fieldChanged(element) {
+    const key = element.dataset.key;
+    if (!key) return;
+    if (element.dataset.boolean === "true") {
+      this._setConfigValue(key, Boolean(element.checked));
+      return;
+    }
+    if (element.dataset.number === "true") {
+      const raw = String(element.value ?? "").trim();
+      this._setConfigValue(key, raw === "" ? undefined : Number(raw));
+      return;
+    }
+    this._setConfigValue(key, element.value);
+  }
+
+  _chipsChanged() {
+    const chips = [...this.shadowRoot.querySelectorAll("input[data-chip]:checked")].map((element) => element.dataset.chip);
+    this._setConfigValue("chips", chips);
+  }
+
+  _setConfigValue(key, value) {
+    const next = { ...this._config };
+    if (value === undefined || value === "") delete next[key]; else next[key] = value;
+    this._config = next;
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: next }, bubbles: true, composed: true }));
+  }
+
+  _escape(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+}
+
 class AnthbotDashboardCard extends HTMLElement {
   constructor() {
     super();
@@ -71,6 +213,10 @@ class AnthbotDashboardCard extends HTMLElement {
     this._mowingTarget = { type: "full", ids: [] };
   }
 
+  static async getConfigElement() {
+    return document.createElement(EDITOR_TAG);
+  }
+
   static getStubConfig(hass) {
     const entity = Object.keys(hass?.states || {}).find((entityId) => (
       entityId.startsWith("sensor.") && entityId.endsWith("_map")
@@ -79,6 +225,8 @@ class AnthbotDashboardCard extends HTMLElement {
       entity: entity || "sensor.YOUR_MOWER_map",
       name: "ANTHBOT",
       height: 650,
+      show_chips: true,
+      show_targets: true,
     };
   }
 
@@ -240,7 +388,8 @@ class AnthbotDashboardCard extends HTMLElement {
   _escape(value){return String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");}
 }
 
+if(!customElements.get(EDITOR_TAG))customElements.define(EDITOR_TAG,AnthbotDashboardCardEditor);
 if(!customElements.get(CARD_TAG))customElements.define(CARD_TAG,AnthbotDashboardCard);
 window.customCards=window.customCards||[];
-if(!window.customCards.some((card)=>card.type===CARD_TAG))window.customCards.push({type:CARD_TAG,name:"ANTHBOT Dashboard Card",description:"Hero-style dashboard for the ANTHBOT Map Home Assistant integration.",preview:false,documentationURL:"https://github.com/Mqbretrofit/anthbot-dashboard-card"});
+if(!window.customCards.some((card)=>card.type===CARD_TAG))window.customCards.push({type:CARD_TAG,name:"ANTHBOT Dashboard Card",description:"Hero-style dashboard for the ANTHBOT Map Home Assistant integration.",preview:true,documentationURL:"https://github.com/Mqbretrofit/anthbot-dashboard-card"});
 console.info(`%c ANTHBOT Dashboard Card %c ${CARD_VERSION} `,"background:#55e58a;color:#07120b;font-weight:800;padding:2px 6px;border-radius:4px 0 0 4px","background:#18232d;color:#fff;padding:2px 6px;border-radius:0 4px 4px 0");
