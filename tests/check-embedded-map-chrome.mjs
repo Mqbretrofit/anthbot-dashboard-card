@@ -17,6 +17,20 @@ for (const token of [
 }
 
 for (const token of [
+  "rotationForViewport",
+  "mobile_map_rotation: 0",
+  "mobileMapRotation: 0",
+  "renderer.drawBackground = function",
+  "backgroundGeometry.mapToScreen",
+  'rename("rotation", "Background rotation")',
+  'rename("mobile_map_rotation", "Mobile background rotation")',
+]) {
+  if (!entry.includes(token)) {
+    throw new Error(`Background-only rotation regression: missing ${token}`);
+  }
+}
+
+for (const token of [
   "static async getConfigElement()",
   "show_targets",
   "start_zone_mow",
@@ -27,4 +41,4 @@ for (const token of [
   }
 }
 
-console.log("Embedded ANTHBOT Map chrome suppression checks passed.");
+console.log("Embedded map chrome and background-only rotation checks passed.");
